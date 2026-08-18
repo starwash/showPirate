@@ -16,7 +16,12 @@ struct RootView: View {
     @State private var path = NavigationPath()
 
     private var needsAPIKey: Bool {
-        storedAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["SHOWPIRATE_SHOW_SETUP"] == "1" {
+            return true
+        }
+        #endif
+        return storedAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
