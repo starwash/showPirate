@@ -2,7 +2,7 @@
 
 Navigate your favorite shows.
 
-Native macOS TV tracker built with SwiftUI, SwiftData, and the [TMDB](https://www.themoviedb.org) API. A modern replacement for the discontinued Episodes app: keep a library of series, mark episodes watched, and see what airs next.
+Native macOS TV tracker built with SwiftUI, SwiftData, and the [TMDB](https://www.themoviedb.org) API. Keep a library of series, mark episodes watched, and see what airs next.
 
 ![Library](docs/screenshots/library-light.png)
 
