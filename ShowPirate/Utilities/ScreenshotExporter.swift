@@ -278,6 +278,7 @@ private struct SearchScreenshotView: View {
 private struct SettingsScreenshotView: View {
     var body: some View {
         SettingsView()
+            .environment(CatalogSync.shared)
             .onAppear {
                 UserDefaults.standard.set("screenshot-placeholder-key", forKey: APIConfig.settingsKey)
             }

@@ -19,6 +19,7 @@ struct RootView: View {
             if let store {
                 splitView
                     .environment(store)
+                    .environment(CatalogSync.shared)
             }
         }
         .task {
@@ -26,6 +27,7 @@ struct RootView: View {
                 store = LibraryStore(context: modelContext)
             }
             if let store {
+                CatalogSync.shared.attach(store: store)
                 Task {
                     await store.warmWatchCaches()
                 }

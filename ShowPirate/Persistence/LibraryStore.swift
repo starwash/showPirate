@@ -60,8 +60,7 @@ final class LibraryStore {
                 markAllAired(on: existing, watched: true)
             }
             existing.rebuildWatchCache()
-            try context.save()
-            refreshDerivedData()
+            try saveAndPublish()
             return
         }
 
@@ -94,8 +93,7 @@ final class LibraryStore {
 
         show.rebuildWatchCache()
         context.insert(show)
-        try context.save()
-        refreshDerivedData()
+        try saveAndPublish()
     }
 
     func refreshShow(_ show: Show) async throws {
@@ -148,13 +146,15 @@ final class LibraryStore {
             CatalogAutoRefresh.markRefreshed()
         }
         refreshDerivedData()
+        if refreshed > 0 {
+            CatalogSync.shared.noteLocalChange()
+        }
         return LibraryRefreshResult(refreshed: refreshed, failed: failed)
     }
 
     func removeFromLibrary(_ show: Show) throws {
         context.delete(show)
-        try context.save()
-        refreshDerivedData()
+        try saveAndPublish()
     }
 
     func setEpisode(_ episode: Episode, watched: Bool) throws {
@@ -166,8 +166,7 @@ final class LibraryStore {
         if wasWatched != watched {
             show.applyEpisodeWatchChange(episode, wasWatched: wasWatched, isWatched: watched)
         }
-        try context.save()
-        refreshDerivedData()
+        try saveAndPublish()
     }
 
     func setSeason(_ season: Season, watched: Bool) throws {
@@ -178,16 +177,93 @@ final class LibraryStore {
         }
         season.show?.lastUpdated = now
         season.show?.rebuildWatchCache()
-        try context.save()
-        refreshDerivedData()
+        try saveAndPublish()
     }
 
     func setShow(_ show: Show, watched: Bool) throws {
         markAllAired(on: show, watched: watched)
         show.lastUpdated = .now
         show.rebuildWatchCache()
+        try saveAndPublish()
+    }
+
+    func allShows() -> [Show] {
+        let descriptor = FetchDescriptor<Show>(sortBy: [SortDescriptor(\.name)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    func replaceCatalog(_ catalog: CatalogFile) throws {
+        try deleteAll(publish: false)
+        var genreMap: [Int: Genre] = [:]
+
+        func resolvedGenre(_ item: CatalogGenre) -> Genre {
+            if let existing = genreMap[item.tmdbID] {
+                return existing
+            }
+            let genre = genre(tmdbID: item.tmdbID, name: item.name)
+            genreMap[item.tmdbID] = genre
+            return genre
+        }
+
+        for item in catalog.shows {
+            let show = Show(
+                tmdbID: item.tmdbID,
+                name: item.name,
+                overview: item.overview,
+                posterPath: item.posterPath,
+                backdropPath: item.backdropPath,
+                status: item.status,
+                firstAirDate: item.firstAirDate,
+                networks: item.networks,
+                episodeRuntime: item.episodeRuntime,
+                inLibrary: item.inLibrary,
+                dateAdded: item.dateAdded,
+                lastUpdated: item.lastUpdated,
+                voteAverage: item.voteAverage,
+                originalLanguage: item.originalLanguage
+            )
+            context.insert(show)
+            show.genres = item.genres.map(resolvedGenre)
+            for seasonItem in item.seasons {
+                let season = Season(
+                    tmdbID: seasonItem.tmdbID,
+                    seasonNumber: seasonItem.seasonNumber,
+                    name: seasonItem.name,
+                    overview: seasonItem.overview,
+                    posterPath: seasonItem.posterPath,
+                    episodeCount: seasonItem.episodeCount,
+                    airDate: seasonItem.airDate,
+                    show: show
+                )
+                for episodeItem in seasonItem.episodes {
+                    let episode = Episode(
+                        tmdbID: episodeItem.tmdbID,
+                        episodeNumber: episodeItem.episodeNumber,
+                        name: episodeItem.name,
+                        overview: episodeItem.overview,
+                        airDate: episodeItem.airDate,
+                        runtime: episodeItem.runtime,
+                        stillPath: episodeItem.stillPath,
+                        voteAverage: episodeItem.voteAverage,
+                        isWatched: episodeItem.isWatched,
+                        watchedAt: episodeItem.watchedAt,
+                        season: season
+                    )
+                    season.episodes.append(episode)
+                }
+                show.seasons.append(season)
+            }
+            show.rebuildWatchCache()
+        }
+
         try context.save()
         refreshDerivedData()
+    }
+
+    private func saveAndPublish() throws {
+        try context.save()
+        refreshDerivedData()
+        CatalogSync.shared.noteLocalChange()
     }
 
     private func markAllAired(on show: Show, watched: Bool) {
@@ -259,6 +335,10 @@ final class LibraryStore {
     }
 
     func deleteAll() throws {
+        try deleteAll(publish: true)
+    }
+
+    private func deleteAll(publish: Bool) throws {
         for show in try context.fetch(FetchDescriptor<Show>()) {
             context.delete(show)
         }
@@ -267,6 +347,9 @@ final class LibraryStore {
         }
         try context.save()
         refreshDerivedData()
+        if publish {
+            CatalogSync.shared.noteLocalChange()
+        }
     }
 
     private func merge(details: TMDBShowDetails, seasons: [TMDBSeasonDetails], into show: Show) throws {
@@ -304,8 +387,7 @@ final class LibraryStore {
         }
 
         show.rebuildWatchCache()
-        try context.save()
-        refreshDerivedData()
+        try saveAndPublish()
     }
 
     private func merge(seasonDTO: TMDBSeasonDetails, into season: Season, show: Show) {

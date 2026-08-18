@@ -4,32 +4,13 @@ import SwiftData
 enum PersistenceController {
     static let legacyStoreName = "showPirate.library"
     static let cloudStoreName = "showPirate.library.icloud"
-    static let localFallbackStoreName = "showPirate.library.local"
+    static let localStoreName = "showPirate.library.local"
     static let migratedKey = "showPirate.didMigrateLocalLibraryToCloud"
-
-    static var usesCloudKit = false
 
     static func makeContainer() -> ModelContainer {
         let schema = Schema([Show.self, Season.self, Episode.self, Genre.self])
-
-        let cloudConfig = ModelConfiguration(
-            cloudStoreName,
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: .automatic
-        )
-
-        do {
-            let container = try ModelContainer(for: schema, configurations: [cloudConfig])
-            usesCloudKit = true
-            migrateLegacyLibraryIfNeeded(into: container)
-            return container
-        } catch {
-            usesCloudKit = false
-        }
-
         let localConfig = ModelConfiguration(
-            localFallbackStoreName,
+            localStoreName,
             schema: schema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: .none
@@ -37,7 +18,8 @@ enum PersistenceController {
 
         do {
             let container = try ModelContainer(for: schema, configurations: [localConfig])
-            migrateLegacyLibraryIfNeeded(into: container)
+            migrateIfNeeded(into: container, from: cloudStoreName)
+            migrateIfNeeded(into: container, from: legacyStoreName)
             return container
         } catch {
             assertionFailure("Failed to create ModelContainer: \(error)")
@@ -46,35 +28,35 @@ enum PersistenceController {
         }
     }
 
-    private static func migrateLegacyLibraryIfNeeded(into destination: ModelContainer) {
+    private static func migrateIfNeeded(into destination: ModelContainer, from storeName: String) {
         let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: migratedKey) == false else { return }
+        let flag = "\(migratedKey).\(storeName)"
+        guard defaults.bool(forKey: flag) == false else { return }
 
         let schema = Schema([Show.self, Season.self, Episode.self, Genre.self])
-        let legacyConfig = ModelConfiguration(
-            legacyStoreName,
+        let sourceConfig = ModelConfiguration(
+            storeName,
             schema: schema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: .none
         )
 
-        guard let legacyContainer = try? ModelContainer(for: schema, configurations: [legacyConfig]) else {
-            defaults.set(true, forKey: migratedKey)
+        guard let sourceContainer = try? ModelContainer(for: schema, configurations: [sourceConfig]) else {
+            defaults.set(true, forKey: flag)
             return
         }
 
-        let source = ModelContext(legacyContainer)
+        let source = ModelContext(sourceContainer)
         let dest = ModelContext(destination)
-
         let destinationShows = (try? dest.fetch(FetchDescriptor<Show>())) ?? []
         if !destinationShows.isEmpty {
-            defaults.set(true, forKey: migratedKey)
+            defaults.set(true, forKey: flag)
             return
         }
 
         let sourceShows = (try? source.fetch(FetchDescriptor<Show>())) ?? []
         guard !sourceShows.isEmpty else {
-            defaults.set(true, forKey: migratedKey)
+            defaults.set(true, forKey: flag)
             return
         }
 
@@ -152,9 +134,10 @@ enum PersistenceController {
                 }
                 show.seasons.append(season)
             }
+            show.rebuildWatchCache()
         }
 
         try? dest.save()
-        defaults.set(true, forKey: migratedKey)
+        defaults.set(true, forKey: flag)
     }
 }

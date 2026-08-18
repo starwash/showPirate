@@ -13,7 +13,7 @@ Native macOS TV tracker built with SwiftUI, SwiftData, and the [TMDB](https://ww
 - **Search** — find shows on TMDB and add them to your catalog
 - **Calendar** — month view with episodes per day
 - **Statistics** — watch time, progress, and favorite genres
-- **Settings** — appearance, TMDB API key, catalog refresh, iCloud sync
+- **Settings** — appearance, TMDB API key, catalog refresh, folder sync
 
 ## Requirements
 
@@ -36,6 +36,10 @@ The app starts with an **empty library**.
 Get a key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api).
 
 No bundled TMDB credentials are shipped with the app.
+
+## Sync between Macs
+
+iCloud CloudKit is not used. In **Settings → Sync folder**, pick a shared folder (Dropbox, iCloud Drive, or Syncthing). The app stores `showPirate-library.json` there. Do the same on the other Mac. The TMDB API key is not synced.
 
 ## Build from source
 

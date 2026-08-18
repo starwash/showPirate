@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var store
+    @Environment(CatalogSync.self) private var catalogSync
     @AppStorage("appearance") private var appearance: AppearancePreference = .system
     @State private var apiKey: String = UserDefaults.standard.string(forKey: APIConfig.settingsKey) ?? ""
     @State private var confirmClear = false
@@ -62,17 +63,34 @@ struct SettingsView: View {
 
                 GlassCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("iCloud")
+                        Text("Sync folder")
                             .font(.headline)
                             .foregroundStyle(Theme.cream)
-                        Text("Library syncs via iCloud when you are signed in on this Mac. Watch progress follows your Apple ID. Theme, layout, and the TMDB API key stay on this computer.")
+                        Text("Choose a Dropbox, iCloud Drive, or Syncthing folder. Both Macs use the same folder. showPirate writes showPirate-library.json there. The TMDB API key stays on this computer. If both Macs edit at once, the last save wins.")
                             .font(.subheadline)
                             .foregroundStyle(Theme.parchment.opacity(0.7))
-                        Label(
-                            PersistenceController.usesCloudKit ? "CloudKit store is active" : "Using a local store (iCloud unavailable)",
-                            systemImage: PersistenceController.usesCloudKit ? "checkmark.icloud" : "icloud.slash"
-                        )
-                        .foregroundStyle(PersistenceController.usesCloudKit ? Theme.watchedGreen : Theme.parchment.opacity(0.7))
+                        Text(catalogSync.folderLabel)
+                            .font(.caption)
+                            .foregroundStyle(Theme.cyan)
+                        Text(catalogSync.statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(Theme.parchment.opacity(0.7))
+                        if let last = catalogSync.lastSyncedAt {
+                            Text("Last sync \(Formatters.relative.localizedString(for: last, relativeTo: .now)).")
+                                .font(.caption)
+                                .foregroundStyle(Theme.cyan)
+                        }
+                        HStack {
+                            Button("Choose Folder…") {
+                                catalogSync.chooseFolder()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            if catalogSync.isConnected {
+                                Button("Disconnect") {
+                                    catalogSync.disconnect()
+                                }
+                            }
+                        }
                     }
                 }
 
