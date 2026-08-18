@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(APIConfig.settingsKey) private var storedAPIKey = ""
     @State private var store: LibraryStore?
     @State private var selectedItem: SidebarItem? = Self.initialSidebarItem()
 
@@ -14,12 +15,22 @@ struct RootView: View {
     }
     @State private var path = NavigationPath()
 
+    private var needsAPIKey: Bool {
+        storedAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         Group {
             if let store {
-                splitView
-                    .environment(store)
-                    .environment(CatalogSync.shared)
+                Group {
+                    if needsAPIKey {
+                        APIKeySetupView()
+                    } else {
+                        splitView
+                    }
+                }
+                .environment(store)
+                .environment(CatalogSync.shared)
             }
         }
         .task {

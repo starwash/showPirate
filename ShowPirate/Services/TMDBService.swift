@@ -2,6 +2,7 @@ import Foundation
 
 enum TMDBError: LocalizedError {
     case missingAPIKey
+    case invalidAPIKey
     case invalidURL
     case http(Int)
     case decoding(Error)
@@ -11,6 +12,8 @@ enum TMDBError: LocalizedError {
         switch self {
         case .missingAPIKey:
             return "Add a TMDB API key in Settings to search shows."
+        case .invalidAPIKey:
+            return "That TMDB API key was rejected. Check that you pasted the API Key (v3)."
         case .invalidURL:
             return "The TMDB request URL was invalid."
         case .http(let code):
@@ -120,6 +123,38 @@ actor TMDBService {
 
         seasons.sort { $0.seasonNumber < $1.seasonNumber }
         return (details, seasons)
+    }
+
+    func validateAPIKey(_ key: String) async throws {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw TMDBError.missingAPIKey }
+
+        guard var components = URLComponents(string: APIConfig.tmdbBaseURL.absoluteString + "/configuration") else {
+            throw TMDBError.invalidURL
+        }
+        components.queryItems = [URLQueryItem(name: "api_key", value: trimmed)]
+        guard let url = components.url else { throw TMDBError.invalidURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw TMDBError.http(-1)
+            }
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw TMDBError.invalidAPIKey
+            }
+            guard (200...299).contains(http.statusCode) else {
+                throw TMDBError.http(http.statusCode)
+            }
+        } catch let error as TMDBError {
+            throw error
+        } catch {
+            throw TMDBError.transport(error)
+        }
     }
 
     private func get<T: Decodable>(path: String, query: [String: String]) async throws -> T {
