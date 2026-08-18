@@ -1,6 +1,10 @@
-# showPirate
+<p align="center">
+  <img src="docs/app-icon.png" width="160" height="160" alt="showPirate app icon">
+</p>
 
-Navigate your favorite shows.
+<h1 align="center">showPirate</h1>
+
+<p align="center"><em>Navigate your favorite shows.</em></p>
 
 Native macOS TV tracker built with SwiftUI, SwiftData, and the [TMDB](https://www.themoviedb.org) API. Keep a library of series, mark episodes watched, and see what airs next.
 
