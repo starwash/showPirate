@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct APIKeySetupView: View {
+    var onSaved: (String) -> Void = { APIConfig.setAPIKey($0) }
     @State private var apiKey = ""
     @State private var isValidating = false
     @State private var errorMessage: String?
@@ -183,6 +184,7 @@ struct APIKeySetupView: View {
         do {
             try await TMDBService.shared.validateAPIKey(trimmed)
             APIConfig.setAPIKey(trimmed)
+            onSaved(trimmed)
         } catch {
             errorMessage = error.localizedDescription
         }

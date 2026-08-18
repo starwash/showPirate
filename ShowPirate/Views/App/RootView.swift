@@ -16,12 +16,7 @@ struct RootView: View {
     @State private var path = NavigationPath()
 
     private var needsAPIKey: Bool {
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["SHOWPIRATE_SHOW_SETUP"] == "1" {
-            return true
-        }
-        #endif
-        return storedAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        storedAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -29,7 +24,9 @@ struct RootView: View {
             if let store {
                 Group {
                     if needsAPIKey {
-                        APIKeySetupView()
+                        APIKeySetupView { key in
+                            storedAPIKey = key
+                        }
                     } else {
                         splitView
                     }
