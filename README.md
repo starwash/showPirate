@@ -28,22 +28,25 @@ Native macOS TV tracker built with SwiftUI, SwiftData, and the [TMDB](https://ww
 
 Download the latest release from [GitHub Releases](https://github.com/starwash/showPirate/releases).
 
+The zip is a universal app (Apple Silicon and Intel). It is not notarized, so after unzipping: right-click `showPirate.app` and choose **Open** the first time.
+
 ## First launch
 
-The app starts with an **empty library**.
+The app asks for a TMDB **API Key (v3)** before the library opens. The key is checked with TMDB, stored only on that Mac, and is not bundled with the download.
 
-1. Open **Settings**
-2. Paste your free TMDB **API Key (v3)**
-3. Click **Save Key**
-4. Go to **Search** and add your first shows
+1. Get a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
+2. Paste it on the setup screen and click **Continue**
+3. Go to **Search** and add shows, or connect a sync folder if you already have a catalog on another Mac
 
-Get a key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api).
-
-No bundled TMDB credentials are shipped with the app.
+You can change the key later in **Settings**.
 
 ## Sync between Macs
 
-iCloud CloudKit is not used. In **Settings → Sync folder**, pick a shared folder (Dropbox, iCloud Drive, or Syncthing). The app stores `showPirate-library.json` there. Do the same on the other Mac. The TMDB API key is not synced.
+CloudKit is not used. In **Settings → Sync folder**, pick a shared folder (Dropbox, iCloud Drive, or Syncthing). Both Macs use the same folder. The app writes `showPirate-library.json` there.
+
+Local edits save within about a second. Incoming changes are checked every few seconds. Use **Sync Now** if iCloud has not delivered the file yet. If both Macs edit at once, the last save wins.
+
+The TMDB API key is not synced. Enter it once on each Mac.
 
 ## Build from source
 
@@ -59,7 +62,7 @@ Select the **showPirate** scheme and press Run.
 
 ## Architecture
 
-SwiftUI + MVVM. Views render; view models and `LibraryStore` mutate data; `TMDBService` talks to the network with async/await. Persistence is SwiftData (`Show`, `Season`, `Episode`, `Genre`).
+SwiftUI + MVVM. Views render; view models and `LibraryStore` mutate data; `TMDBService` talks to the network with async/await. Persistence is SwiftData (`Show`, `Season`, `Episode`, `Genre`). Folder sync is a JSON catalog file, not iCloud CloudKit.
 
 Sidebar: Dashboard, Library, Search, Calendar, Statistics, Settings.
 
