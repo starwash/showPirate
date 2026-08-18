@@ -66,7 +66,7 @@ struct SettingsView: View {
                         Text("Sync folder")
                             .font(.headline)
                             .foregroundStyle(Theme.cream)
-                        Text("Choose a Dropbox, iCloud Drive, or Syncthing folder. Both Macs use the same folder. showPirate writes showPirate-library.json there. The TMDB API key stays on this computer. If both Macs edit at once, the last save wins.")
+                        Text("Choose a Dropbox, iCloud Drive, or Syncthing folder. Both Macs use the same folder. Local edits save within a second. Incoming changes are checked every few seconds. Use Sync Now if iCloud has not delivered the file yet. The TMDB API key stays on this computer. If both Macs edit at once, the last save wins.")
                             .font(.subheadline)
                             .foregroundStyle(Theme.parchment.opacity(0.7))
                         Text(catalogSync.folderLabel)
@@ -86,6 +86,10 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             if catalogSync.isConnected {
+                                Button(catalogSync.isSyncing ? "Syncing…" : "Sync Now") {
+                                    catalogSync.syncNow()
+                                }
+                                .disabled(catalogSync.isSyncing)
                                 Button("Disconnect") {
                                     catalogSync.disconnect()
                                 }
