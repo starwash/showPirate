@@ -22,3 +22,4 @@ playground.xcworkspace
 showPirate.images/
 showPirate.urlcache/
 showPirate.tmdb/
+*.zip
