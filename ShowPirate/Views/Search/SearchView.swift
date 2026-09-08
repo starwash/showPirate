@@ -117,7 +117,7 @@ struct SearchView: View {
                     .foregroundStyle(Theme.parchment.opacity(0.7))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 16) {
+                    LazyHStack(alignment: .top, spacing: 16) {
                         ForEach(shows) { result in
                             SearchResultCard(
                                 result: result,
@@ -127,6 +127,7 @@ struct SearchView: View {
                                     Task { await viewModel.addToLibrary(id: result.id, store: store, markWatched: markWatched) }
                                 }
                             )
+                            .frame(width: 160)
                         }
                     }
                 }

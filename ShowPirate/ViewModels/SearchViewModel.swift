@@ -199,6 +199,95 @@ struct DashboardSnapshot {
 }
 
 enum DashboardProjector {
+    static func lightweightSnapshot(
+        from shows: [Show],
+        calendarItemsByDay: [Date: [CalendarDayItem]] = [:],
+        upcomingLimit: Int = 12,
+        recentLimit: Int = 12
+    ) -> DashboardSnapshot {
+        let library = shows.filter(\.inLibrary)
+        let today = Date().startOfDay
+        let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date())?.startOfDay ?? .distantPast
+
+        var continueWatching = library.filter(\.cachedHasUnwatchedAired)
+        continueWatching.sort {
+            ($0.cachedLastWatchedAt ?? .distantPast) > ($1.cachedLastWatchedAt ?? .distantPast)
+        }
+
+        var watchedEpisodes = 0
+        var minutes = 0
+        var completedShows = 0
+        var genreTally: [String: Int] = [:]
+        for show in library {
+            watchedEpisodes += show.cachedWatchedCount
+            minutes += show.cachedWatchedMinutes
+            if show.isCompleted { completedShows += 1 }
+            if show.cachedWatchedCount > 0 {
+                for genre in show.genreNames {
+                    genreTally[genre, default: 0] += show.cachedWatchedCount
+                }
+            }
+        }
+
+        var upcomingByShow: [Int: CalendarDayItem] = [:]
+        var recentlyAired: [CalendarDayItem] = []
+        if calendarItemsByDay.isEmpty {
+            for show in library {
+                if let next = show.cachedNextAirDate?.startOfDay, next > today {
+                    upcomingByShow[show.tmdbID] = CalendarDayItem(
+                        showID: show.tmdbID,
+                        showName: show.name,
+                        posterPath: show.posterPath,
+                        season: max(show.cachedNextUnwatchedSeason, 1),
+                        episode: 1,
+                        name: show.cachedNextUnwatchedName,
+                        airDate: next
+                    )
+                }
+            }
+        } else {
+            for (day, items) in calendarItemsByDay {
+                if day > today {
+                    for item in items {
+                        if let existing = upcomingByShow[item.showID] {
+                            if day < existing.airDate {
+                                upcomingByShow[item.showID] = item
+                            }
+                        } else {
+                            upcomingByShow[item.showID] = item
+                        }
+                    }
+                } else if day >= cutoff {
+                    recentlyAired.append(contentsOf: items)
+                }
+            }
+        }
+
+        var upcoming = Array(upcomingByShow.values)
+        upcoming.sort { $0.airDate < $1.airDate }
+        recentlyAired.sort { $0.airDate > $1.airDate }
+
+        let ranked = genreTally
+            .map { (name: $0.key, count: $0.value) }
+            .sorted {
+                if $0.count == $1.count { return $0.name < $1.name }
+                return $0.count > $1.count
+            }
+
+        return DashboardSnapshot(
+            continueWatching: continueWatching,
+            upcoming: Array(upcoming.prefix(upcomingLimit)),
+            recentlyAired: Array(recentlyAired.prefix(recentLimit)),
+            stats: WatchStats(
+                watchedEpisodes: watchedEpisodes,
+                watchedShows: completedShows,
+                showsInLibrary: library.count,
+                minutesWatched: minutes,
+                genreCounts: ranked
+            )
+        )
+    }
+
     static func snapshot(from shows: [Show], upcomingLimit: Int = 12, recentLimit: Int = 12) -> DashboardSnapshot {
         let library = shows.filter(\.inLibrary)
         let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? .distantPast

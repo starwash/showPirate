@@ -39,14 +39,19 @@ struct RootView: View {
             if store == nil {
                 store = LibraryStore(context: modelContext)
             }
-            if let store {
-                CatalogSync.shared.attach(store: store)
-                Task {
-                    await store.warmWatchCaches()
-                }
-                try? await Task.sleep(for: .seconds(1.5))
-                await CatalogAutoRefresh.runIfNeeded(using: store)
+            guard let store else { return }
+
+            // Let the first frame paint Library/Dashboard before heavy work.
+            await Task.yield()
+            CatalogSync.shared.attach(store: store)
+
+            Task(priority: .utility) {
+                await store.warmWatchCaches()
             }
+
+            // Daily TMDB refresh is useful, but not on the critical launch path.
+            try? await Task.sleep(for: .seconds(20))
+            await CatalogAutoRefresh.runIfNeeded(using: store)
         }
     }
 

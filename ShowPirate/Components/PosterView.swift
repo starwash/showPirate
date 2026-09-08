@@ -37,7 +37,7 @@ struct BannerView: View {
     var size: ImageSize = .backdropLarge
 
     var body: some View {
-        let pixelSize = height.map { Int(($0 * 2.5).rounded()) }
+        let pixelSize = height.map { Int(($0 * 2.5).rounded()) } ?? 1280
         CachedRemoteImage(
             url: ImageURLBuilder.url(path: path, size: size),
             maxPixelSize: pixelSize

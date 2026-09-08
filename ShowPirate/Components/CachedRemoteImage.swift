@@ -29,9 +29,6 @@ struct CachedRemoteImage<Placeholder: View>: View {
         .task(id: taskKey) {
             await load()
         }
-        .onAppear {
-            Task { await load() }
-        }
     }
 
     private var taskKey: String {

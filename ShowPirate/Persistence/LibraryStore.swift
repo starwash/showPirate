@@ -20,10 +20,11 @@ final class LibraryStore {
         stats: .empty
     )
     private var calendarItemsByDay: [Date: [CalendarDayItem]] = [:]
+    private var bulkWriteDepth = 0
 
     init(context: ModelContext) {
         self.context = context
-        refreshDerivedData()
+        refreshLibraryIDsOnly()
     }
 
     func calendarItems(on day: Date) -> [CalendarDayItem] {
@@ -96,11 +97,11 @@ final class LibraryStore {
         try saveAndPublish()
     }
 
-    func refreshShow(_ show: Show) async throws {
+    func refreshShow(_ show: Show, publish: Bool = true) async throws {
         let tmdbID = show.tmdbID
         let (details, seasons) = try await TMDBService.shared.fetchShowWithSeasons(id: tmdbID)
         guard let show = self.show(tmdbID: tmdbID) else { return }
-        try merge(details: details, seasons: seasons, into: show)
+        try merge(details: details, seasons: seasons, into: show, publish: publish)
     }
 
     func refreshLibrary() async -> LibraryRefreshResult {
@@ -113,6 +114,15 @@ final class LibraryStore {
         var failed = 0
         var index = 0
 
+        bulkWriteDepth += 1
+        defer {
+            bulkWriteDepth -= 1
+            refreshDerivedData()
+            if refreshed > 0 {
+                CatalogSync.shared.noteLocalChange()
+            }
+        }
+
         await withTaskGroup(of: (Bool).self) { group in
             func enqueueNext() {
                 guard index < shows.count else { return }
@@ -120,7 +130,7 @@ final class LibraryStore {
                 index += 1
                 group.addTask { @MainActor in
                     do {
-                        try await self.refreshShow(show)
+                        try await self.refreshShow(show, publish: false)
                         return true
                     } catch {
                         return false
@@ -145,10 +155,6 @@ final class LibraryStore {
         if refreshed > 0 || failed == 0 {
             CatalogAutoRefresh.markRefreshed()
         }
-        refreshDerivedData()
-        if refreshed > 0 {
-            CatalogSync.shared.noteLocalChange()
-        }
         return LibraryRefreshResult(refreshed: refreshed, failed: failed)
     }
 
@@ -166,7 +172,7 @@ final class LibraryStore {
         if wasWatched != watched {
             show.applyEpisodeWatchChange(episode, wasWatched: wasWatched, isWatched: watched)
         }
-        try saveAndPublish()
+        try saveAfterWatchChange()
     }
 
     func setSeason(_ season: Season, watched: Bool) throws {
@@ -177,14 +183,14 @@ final class LibraryStore {
         }
         season.show?.lastUpdated = now
         season.show?.rebuildWatchCache()
-        try saveAndPublish()
+        try saveAfterWatchChange()
     }
 
     func setShow(_ show: Show, watched: Bool) throws {
         markAllAired(on: show, watched: watched)
         show.lastUpdated = .now
         show.rebuildWatchCache()
-        try saveAndPublish()
+        try saveAfterWatchChange()
     }
 
     func allShows() -> [Show] {
@@ -262,7 +268,14 @@ final class LibraryStore {
 
     private func saveAndPublish() throws {
         try context.save()
+        guard bulkWriteDepth == 0 else { return }
         refreshDerivedData()
+        CatalogSync.shared.noteLocalChange()
+    }
+
+    private func saveAfterWatchChange() throws {
+        try context.save()
+        refreshDashboardAfterWatchChange()
         CatalogSync.shared.noteLocalChange()
     }
 
@@ -274,32 +287,83 @@ final class LibraryStore {
         }
     }
 
+    private func refreshLibraryIDsOnly() {
+        let library = libraryShows(from: nil)
+        libraryShowIDs = Set(library.map(\.tmdbID))
+        dashboardSnapshot = DashboardProjector.lightweightSnapshot(from: library)
+    }
+
+    private func refreshDashboardAfterWatchChange() {
+        let library = libraryShows(from: nil)
+        libraryShowIDs = Set(library.map(\.tmdbID))
+        dashboardSnapshot = DashboardProjector.lightweightSnapshot(
+            from: library,
+            calendarItemsByDay: calendarItemsByDay
+        )
+    }
+
     private func refreshDerivedData(using shows: [Show]? = nil) {
         let library = libraryShows(from: shows)
 
         var marked: Set<Date> = []
         var grouped: [Date: [CalendarDayItem]] = [:]
         let decoder = JSONDecoder()
+        let today = Date().startOfDay
+        let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date())?.startOfDay ?? .distantPast
+
+        var continueWatching: [Show] = []
+        var upcoming: [CalendarDayItem] = []
+        var recentlyAired: [CalendarDayItem] = []
+        var watchedEpisodes = 0
+        var minutes = 0
+        var completedShows = 0
+        var genreTally: [String: Int] = [:]
 
         for show in library {
+            if show.cachedHasUnwatchedAired {
+                continueWatching.append(show)
+            }
+            watchedEpisodes += show.cachedWatchedCount
+            minutes += show.cachedWatchedMinutes
+            if show.isCompleted {
+                completedShows += 1
+            }
+            if show.cachedWatchedCount > 0 {
+                for genre in show.genreNames {
+                    genreTally[genre, default: 0] += show.cachedWatchedCount
+                }
+            }
+
             guard let data = show.cachedAirBeatsJSON.data(using: .utf8),
                   let beats = try? decoder.decode([CachedAirBeat].self, from: data) else {
                 continue
             }
+
+            var nextUpcoming: CalendarDayItem?
             for beat in beats {
                 let day = Date(timeIntervalSince1970: TimeInterval(beat.t)).startOfDay
-                marked.insert(day)
-                grouped[day, default: []].append(
-                    CalendarDayItem(
-                        showID: show.tmdbID,
-                        showName: show.name,
-                        posterPath: show.posterPath,
-                        season: beat.s,
-                        episode: beat.e,
-                        name: beat.n,
-                        airDate: day
-                    )
+                let item = CalendarDayItem(
+                    showID: show.tmdbID,
+                    showName: show.name,
+                    posterPath: show.posterPath,
+                    season: beat.s,
+                    episode: beat.e,
+                    name: beat.n,
+                    airDate: day
                 )
+                marked.insert(day)
+                grouped[day, default: []].append(item)
+
+                if day > today {
+                    if nextUpcoming == nil || day < nextUpcoming!.airDate {
+                        nextUpcoming = item
+                    }
+                } else if day >= cutoff {
+                    recentlyAired.append(item)
+                }
+            }
+            if let nextUpcoming {
+                upcoming.append(nextUpcoming)
             }
         }
 
@@ -313,10 +377,34 @@ final class LibraryStore {
             }
         }
 
+        continueWatching.sort {
+            ($0.cachedLastWatchedAt ?? .distantPast) > ($1.cachedLastWatchedAt ?? .distantPast)
+        }
+        upcoming.sort { $0.airDate < $1.airDate }
+        recentlyAired.sort { $0.airDate > $1.airDate }
+
+        let ranked = genreTally
+            .map { (name: $0.key, count: $0.value) }
+            .sorted {
+                if $0.count == $1.count { return $0.name < $1.name }
+                return $0.count > $1.count
+            }
+
         calendarMarkedDays = marked
         calendarItemsByDay = grouped
         libraryShowIDs = Set(library.map(\.tmdbID))
-        dashboardSnapshot = DashboardProjector.snapshot(from: library)
+        dashboardSnapshot = DashboardSnapshot(
+            continueWatching: continueWatching,
+            upcoming: Array(upcoming.prefix(12)),
+            recentlyAired: Array(recentlyAired.prefix(12)),
+            stats: WatchStats(
+                watchedEpisodes: watchedEpisodes,
+                watchedShows: completedShows,
+                showsInLibrary: library.count,
+                minutesWatched: minutes,
+                genreCounts: ranked
+            )
+        )
     }
 
     private func libraryShows(from shows: [Show]?) -> [Show] {
@@ -352,7 +440,7 @@ final class LibraryStore {
         }
     }
 
-    private func merge(details: TMDBShowDetails, seasons: [TMDBSeasonDetails], into show: Show) throws {
+    private func merge(details: TMDBShowDetails, seasons: [TMDBSeasonDetails], into show: Show, publish: Bool = true) throws {
         show.name = details.name
         show.overview = details.overview ?? show.overview
         show.posterPath = details.posterPath ?? show.posterPath
@@ -387,7 +475,11 @@ final class LibraryStore {
         }
 
         show.rebuildWatchCache()
-        try saveAndPublish()
+        try context.save()
+        if publish && bulkWriteDepth == 0 {
+            refreshDerivedData()
+            CatalogSync.shared.noteLocalChange()
+        }
     }
 
     private func merge(seasonDTO: TMDBSeasonDetails, into season: Season, show: Show) {

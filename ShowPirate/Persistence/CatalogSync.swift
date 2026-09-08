@@ -29,6 +29,7 @@ final class CatalogSync {
     private var pollTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
     private var lastWrittenHash: String?
+    private var lastSeenFileSignature: String?
     private var isApplyingRemote = false
     private var isAccessing = false
 
@@ -64,6 +65,7 @@ final class CatalogSync {
         isConnected = false
         isSyncing = false
         lastWrittenHash = nil
+        lastSeenFileSignature = nil
         UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
         UserDefaults.standard.removeObject(forKey: Self.pathKey)
         UserDefaults.standard.removeObject(forKey: Self.securityScopeKey)
@@ -79,7 +81,7 @@ final class CatalogSync {
         guard isConnected, !isApplyingRemote else { return }
         exportTask?.cancel()
         exportTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(700))
+            try? await Task.sleep(for: .milliseconds(1500))
             guard !Task.isCancelled else { return }
             self?.exportNow()
         }
@@ -258,6 +260,7 @@ final class CatalogSync {
             let data = try CatalogCodec.encoder().encode(catalog)
             try writeData(data, to: fileURL)
             lastWrittenHash = Self.hash(data)
+            lastSeenFileSignature = fileSignature(for: fileURL) ?? lastWrittenHash
             UserDefaults.standard.set(catalog.exportedAt, forKey: Self.appliedExportKey)
             lastSyncedAt = catalog.exportedAt
             statusMessage = "Saved to folder"
@@ -269,7 +272,12 @@ final class CatalogSync {
 
     private func importFromDisk() {
         guard !isApplyingRemote, let fileURL = catalogURL() else { return }
+        let signature = fileSignature(for: fileURL)
+        if let signature, signature == lastSeenFileSignature {
+            return
+        }
         guard let data = try? readData(from: fileURL) else { return }
+        lastSeenFileSignature = signature ?? Self.hash(data)
         if Self.hash(data) == lastWrittenHash { return }
         guard let catalog = try? CatalogCodec.decoder().decode(CatalogFile.self, from: data) else { return }
         let applied = UserDefaults.standard.object(forKey: Self.appliedExportKey) as? Date ?? .distantPast
@@ -279,6 +287,13 @@ final class CatalogSync {
         apply(catalog, fromRemote: true)
         lastWrittenHash = Self.hash(data)
         statusMessage = "Updated from folder"
+    }
+
+    private func fileSignature(for url: URL) -> String? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        guard let modified = values?.contentModificationDate else { return nil }
+        let size = values?.fileSize ?? 0
+        return "\(size)-\(modified.timeIntervalSinceReferenceDate)"
     }
 
     private func apply(_ catalog: CatalogFile, fromRemote: Bool) {
@@ -357,7 +372,7 @@ final class CatalogSync {
 
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(12))
                 self?.importFromDisk()
             }
         }

@@ -247,9 +247,11 @@ struct ShowDetailView: View {
                 WatchProgressBar(progress: season.progress, height: 8)
                 if viewModel.expandedSeason == season.seasonNumber {
                     Divider().padding(.vertical, 4)
-                    ForEach(season.sortedEpisodes) { episode in
-                        EpisodeRow(episode: episode) {
-                            viewModel.toggleEpisode(episode, store: store)
+                    LazyVStack(spacing: 0) {
+                        ForEach(season.sortedEpisodes) { episode in
+                            EpisodeRow(episode: episode) {
+                                viewModel.toggleEpisode(episode, store: store)
+                            }
                         }
                     }
                 }
@@ -281,7 +283,10 @@ private struct CastMemberCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CachedRemoteImage(url: ImageURLBuilder.url(path: member.profilePath, size: .posterSmall)) {
+            CachedRemoteImage(
+                url: ImageURLBuilder.url(path: member.profilePath, size: .posterSmall),
+                maxPixelSize: 200
+            ) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Theme.navy)
                     .overlay {
